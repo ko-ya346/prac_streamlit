@@ -1,6 +1,9 @@
+import numpy as np
+
 import streamlit as st
 import pandas as pd
 
+import plotly.graph_objects as go
 
 # google drive上のcsvファイルのURL
 URL = (
@@ -8,18 +11,80 @@ URL = (
 )
 # google drive api key
 KEY = st.secrets.GoogleDriveApiKey.key
+DEBUG = True
 
 @st.cache
-def load_data():
+def load_data(debug):
     """
     Args:
-        url: google drive 
+        url: google drive
     """
     path = f"https://www.googleapis.com/drive/v3/files/{URL.split('/')[-2]}?alt=media&key={KEY}"
-    return pd.read_csv(path)
-    
+    df = pd.read_csv(path)
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"], unit="s")
 
-df = load_data() 
+    if debug:
+        df = df.iloc[-10000:].reset_index(drop=True)
+
+    return df
 
 
-st.write(df.head(5))
+def trunc_timestamp(df, freq, timestamp_col="Timestamp"):
+    if freq == "1month":
+        df[timestamp_col] = df[timestamp_col].dt.to_period("M").dt.to_timestamp()
+    elif freq == "1week":
+        df[timestamp_col] = df[timestamp_col].dt.floor("7D")
+    elif freq == "1day":
+        df[timestamp_col] = df[timestamp_col].dt.floor("d")
+    elif freq == "4hour":
+        hours4_to_seconds = 4 * 60 * 60
+        df[timestamp_col] = pd.to_datetime(
+            df[timestamp_col].map(lambda x: x.timestamp())
+            // hours4_to_seconds
+            * hours4_to_seconds,
+            unit="s",
+        )
+    elif freq == "30min":
+        df[timestamp_col] = df[timestamp_col].dt.floor("30T")
+    else:
+        df[timestamp_col] = df[timestamp_col].dt.floor("15T")
+    return df
+
+
+org_df = load_data(debug=DEBUG)
+df = org_df.copy(deep=True)
+st.write(df.head())
+# sliderで表示期間を指定
+ymd = df["Timestamp"].dt.floor("d")
+timestamp_slider = st.sidebar.select_slider(
+    "Select the period for displaying candlesticks.", 
+    options=ymd,
+    value=(np.min(ymd), np.max(ymd))
+)
+st.write(timestamp_slider)
+
+# 時間足を選択
+freq_lst = ["1month", "1week", "1day", "4hour", "1hour", "30min", "15min"]
+freq = st.selectbox("Select freq", freq_lst)
+df = trunc_timestamp(df, freq, "Timestamp")
+
+candle_df = df.groupby("Timestamp").agg(
+    {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
+).reset_index()
+
+st.text("Now drawing plots")
+fig = go.Figure()
+fig.add_trace(
+    go.Candlestick(
+        x=candle_df["Timestamp"],
+        open=candle_df["Open"],
+        high=candle_df["High"],
+        low=candle_df["Low"],
+        close=candle_df["Close"],
+    )
+)
+pl = st.empty()
+pl.plotly_chart(fig)
+
+# candle, 折れ線グラフ両方だす
+# 折れ線グラフは列名を選択
