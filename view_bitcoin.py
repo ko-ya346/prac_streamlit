@@ -13,6 +13,7 @@ URL = (
 KEY = st.secrets.GoogleDriveApiKey.key
 DEBUG = True
 
+
 @st.cache
 def load_data(debug):
     """
@@ -51,28 +52,36 @@ def trunc_timestamp(df, freq, timestamp_col="Timestamp"):
     return df
 
 
+# cacheした変数をいじるとwarningでる
 org_df = load_data(debug=DEBUG)
 df = org_df.copy(deep=True)
-st.write(df.head())
+
 # sliderで表示期間を指定
-ymd = df["Timestamp"].dt.floor("d")
-timestamp_slider = st.sidebar.select_slider(
-    "Select the period for displaying candlesticks.", 
+ymd = df["Timestamp"].dt.floor("d").unique()
+from_ymd, to_ymd = st.sidebar.select_slider(
+    "Select the period for displaying candlesticks.",
     options=ymd,
-    value=(np.min(ymd), np.max(ymd))
+    value=(np.min(ymd), np.max(ymd)),
 )
-st.write(timestamp_slider)
+cond1 = df["Timestamp"] >= from_ymd
+cond2 = df["Timestamp"] <= to_ymd
+df = df[cond1 & cond2].reset_index(drop=True)
+st.write(df.head())
 
 # 時間足を選択
 freq_lst = ["1month", "1week", "1day", "4hour", "1hour", "30min", "15min"]
 freq = st.selectbox("Select freq", freq_lst)
 df = trunc_timestamp(df, freq, "Timestamp")
 
-candle_df = df.groupby("Timestamp").agg(
-    {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
-).reset_index()
+# ローソク足生成
+candle_df = (
+    df.groupby("Timestamp")
+    .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"})
+    .reset_index()
+)
 
-st.text("Now drawing plots")
+pl = st.empty()
+pl.text("Now drawing plots")
 fig = go.Figure()
 fig.add_trace(
     go.Candlestick(
@@ -83,7 +92,6 @@ fig.add_trace(
         close=candle_df["Close"],
     )
 )
-pl = st.empty()
 pl.plotly_chart(fig)
 
 # candle, 折れ線グラフ両方だす
