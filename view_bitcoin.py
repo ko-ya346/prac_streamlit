@@ -94,6 +94,10 @@ fig.add_trace(
         close=candle_df["Close"],
     )
 )
+fig.update_layout(
+    xaxis_title="Timestamp",
+    yaxis_title="USD",
+)
 pl.plotly_chart(fig)
 
 # candle, 折れ線グラフ両方だす
