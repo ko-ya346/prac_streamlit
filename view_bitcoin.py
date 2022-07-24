@@ -1,3 +1,4 @@
+from datetime import datetime
 import numpy as np
 
 import streamlit as st
@@ -12,6 +13,7 @@ URL = (
 # google drive api key
 KEY = st.secrets.GoogleDriveApiKey.key
 DEBUG = False
+
 
 @st.cache
 def load_data(debug):
@@ -50,19 +52,21 @@ def trunc_timestamp(df, freq, timestamp_col="Timestamp"):
         df[timestamp_col] = df[timestamp_col].dt.floor("15T")
     return df
 
+
 # cacheした変数をいじるとwarningでる
 org_df = load_data(debug=DEBUG)
 df = org_df.copy(deep=True)
 
 # sliderで表示期間を指定
-ymd = df["Timestamp"].dt.floor("d").unique()
+ymd = df["Timestamp"].dt.floor("d").dt.date.unique()
 from_ymd, to_ymd = st.sidebar.select_slider(
-    "Select the period for displaying candlesticks.", 
+    "Select the period for displaying candlesticks.",
     options=ymd,
-    value=(np.min(ymd), np.max(ymd))
+    value=(np.min(ymd), np.max(ymd)),
 )
-cond1 = df["Timestamp"] >= from_ymd 
-cond2 = df["Timestamp"] <= to_ymd 
+fmt = "%Y-%m-%d"
+cond1 = df["Timestamp"] >= datetime.strptime(from_ymd.strftime(fmt), fmt)
+cond2 = df["Timestamp"] <= datetime.strptime(to_ymd.strftime(fmt), fmt)
 df = df[cond1 & cond2].reset_index(drop=True)
 st.write(df.head())
 
@@ -72,9 +76,11 @@ freq = st.selectbox("Select freq", freq_lst)
 df = trunc_timestamp(df, freq, "Timestamp")
 
 # ローソク足生成
-candle_df = df.groupby("Timestamp").agg(
-    {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
-).reset_index()
+candle_df = (
+    df.groupby("Timestamp")
+    .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"})
+    .reset_index()
+)
 
 pl = st.empty()
 pl.text("Now drawing plots")
